@@ -12,22 +12,25 @@ from rtree import index
 def overflow(img_dimension, box_dimension, overlap):
     # Returns number of passes box must make in one direction to cover the image
     adjusted = box_dimension - overlap
-    return (img_dimension//adjusted + int(bool(img_dimension % adjusted)))
+    return (img_dimension // adjusted + int(bool(img_dimension % adjusted)))
+
 
 def region2polygon(region):  # get the polygon that is wrapped in a region object
     x_and_y_unparsed = region["shape_attributes"]
     all_points_x = x_and_y_unparsed["all_points_x"]
     all_points_y = x_and_y_unparsed["all_points_y"]
     polygon = Polygon(list(zip(all_points_x, all_points_y)))
-    polygon.class_str = region["region_attributes"]["Class"]
+    polygon.class_str = region["region_attributes"]["class"]
     return polygon
 
+
 # build an rtree over all ploygons (their bounding boxes) in an image
-def rtree_over_pgons(polygons): # [x1, y1, x2, y2]
+def rtree_over_pgons(polygons):  # [x1, y1, x2, y2]
     idx = index.Index()
     for pos, polygon in enumerate(polygons):
         idx.insert(pos, polygon.bounds)
     return idx
+
 
 def rect2polygon(x1, y1, x2, y2):
     p1 = (x1, y1)
@@ -36,14 +39,16 @@ def rect2polygon(x1, y1, x2, y2):
     p4 = (x2, y1)
     return Polygon([p1, p2, p3, p4])
 
+
 def coord_adjust(polygon_list, positions, x1, y1):
     adjusted_polygons = []
     for pos in positions:
         polygon = polygon_list[pos]
-        new_polygon = shapely.affinity.translate(polygon, xoff = -x1, yoff = -y1)
+        new_polygon = shapely.affinity.translate(polygon, xoff=-x1, yoff=-y1)
         new_polygon.class_str = polygon.class_str
         adjusted_polygons.append(new_polygon)
     return adjusted_polygons
+
 
 def region_maker(polygons):
     regions_dicts = []
@@ -59,11 +64,12 @@ def region_maker(polygons):
                 "all_points_y": ys
             },
             "region_attributes": {
-                "Class": polygon.class_str
+                "class": polygon.class_str
             }
         })
 
     return regions_dicts
+
 
 class AnnotatedImages:
     # member variables:
@@ -114,7 +120,7 @@ class AnnotatedImages:
 
         # main sliding logic
         box_w, box_h = bbox_shape
-        assert(min(box_w, box_h) > overlap)
+        assert (min(box_w, box_h) > overlap)
         annotation_dict = {}
         for img_file in os.listdir(self.img_dir):
             if img_file.endswith('.jpg'):  # if current file is an .jpg image
@@ -139,17 +145,18 @@ class AnnotatedImages:
                 for i in range(overflow(img_w, box_w, overlap)):
                     for j in range(overflow(img_h, box_h, overlap)):
                         # slide
-                        y_end = accumulator_y+box_h
+                        y_end = accumulator_y + box_h
                         if y_end > img_h:
                             y_end = img_h
-                        x_end = accumulator_x+box_w
+                        x_end = accumulator_x + box_w
                         if x_end > img_w:
                             x_end = img_w
                         # get ploygons inside the sliding box
-                        query_box = (accumulator_x, accumulator_y, x_end, y_end) # [x1, y1, x2, y2]
+                        query_box = (accumulator_x, accumulator_y, x_end, y_end)  # [x1, y1, x2, y2]
                         pgon_positions = list(pgon_rtree.intersection(query_box))
                         # refinement: filtering polygons that are not totally inside the sliding box
-                        sliding_box = rect2polygon(*query_box) # get the polygon object for the image, to be used for rtree refinement
+                        sliding_box = rect2polygon(
+                            *query_box)  # get the polygon object for the image, to be used for rtree refinement
                         refined_positions = []
                         for pos in pgon_positions:
                             polygon = polygons[pos]
@@ -157,28 +164,28 @@ class AnnotatedImages:
                                 refined_positions.append(pos)
 
                         # print('len(refined_positions) =', len(refined_positions)) #!!!!!!!!!!!!!!!!!!!!!
-                        
+
                         adjusted_polygons = coord_adjust(polygons, refined_positions, accumulator_x, accumulator_y)
-                        
-                        if len(adjusted_polygons) == 0: # there's no polygon in the box
+
+                        if len(adjusted_polygons) == 0:  # there's no polygon in the box
                             accumulator_y += box_h - overlap
                             continue
-                        
+
                         # get the image
                         new_img = img[accumulator_y:y_end,
-                                      accumulator_x:x_end]
+                                  accumulator_x:x_end]
                         # save the image
                         img_file_noJPG = img_file[:-4]
                         new_img_name = f"{img_file_noJPG}_{i}_{j}.jpg"
                         new_img_path = os.path.join(output_image_directory, new_img_name)
                         io.imsave(new_img_path, new_img)
                         new_img_file_size = os.stat(new_img_path).st_size
-                        
+
                         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!! debug BEGIN: to plot the image along with all polygons
                         '''
                         plt.figure(figsize=(10, 10))
                         io.imshow(new_img)
-                        
+
                         #polyons inside
                         for polygon in adjusted_polygons:
                             x, y = polygon.exterior.xy
@@ -186,7 +193,7 @@ class AnnotatedImages:
                         plt.show()
                         # '''
                         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!! debug END
-                        
+
                         # return  # !!!!!!!!!!!!!!!!!!!!!!!!!!!!! debug: stop after just one slide
 
                         # save regions of the new image into annotation_dict
@@ -196,17 +203,18 @@ class AnnotatedImages:
                             "regions": region_maker(adjusted_polygons),
                             "file_attributes": {}
                         }
-                        
+
                         accumulator_y += box_h - overlap
                     # move y to beginning, move x to next row
                     accumulator_x += box_w - overlap
                     accumulator_y = 0
 
                 # return  # !!!!!!!!!!!!!!!!!!!!!!!!!!!!! debug: stop after just one slide
-                    
+
         ## print(annotation_dict)
         with open(output_annotation_file_path, 'w') as annot_outfile:
             json.dump(annotation_dict, annot_outfile, indent=4)
+
 
 """ # on Mac
 an = AnnotatedImages(r"test",
